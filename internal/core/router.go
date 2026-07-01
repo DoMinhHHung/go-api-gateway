@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"time"
 
 	"github.com/DoMinhHHung/go-api-gateway/internal/config"
 	"github.com/DoMinhHHung/go-api-gateway/internal/middlewares"
@@ -21,6 +22,14 @@ func SetupRoutes(cfg *config.AppConfig) *http.ServeMux {
 
 		targetURL, _ := url.Parse(route.Backends[0].URL)
 		proxy := httputil.NewSingleHostReverseProxy(targetURL)
+
+		proxy.Transport = &http.Transport{
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   100,
+			MaxConnsPerHost:       200,
+			IdleConnTimeout:       90 * time.Second,
+			ResponseHeaderTimeout: 5 * time.Second,
+		}
 
 		for _, method := range route.Methods {
 			pattern := method + " " + route.Path
