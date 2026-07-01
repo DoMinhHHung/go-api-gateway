@@ -19,3 +19,8 @@ routes:
       enabled: true
       rate: 1      
       capacity: 2
+    circuit_breaker:
+      enabled: true
+      max_requests: 1
+      interval: 10
+      timeout: 15

@@ -32,16 +32,24 @@ type RateLimitConfig struct {
 }
 
 type RouteConfig struct {
-	ID          string          `mapstructure:"id"`
-	Path        string          `mapstructure:"path"`
-	Methods     []string        `mapstructure:"methods"`
-	Backends    []BackendConfig `mapstructure:"backends"`
-	Middlewares []string        `mapstructure:"middlewares"`
-	RateLimit   RateLimitConfig `mapstructure:"rate_limit"`
+	ID             string               `mapstructure:"id"`
+	Path           string               `mapstructure:"path"`
+	Methods        []string             `mapstructure:"methods"`
+	Backends       []BackendConfig      `mapstructure:"backends"`
+	Middlewares    []string             `mapstructure:"middlewares"`
+	RateLimit      RateLimitConfig      `mapstructure:"rate_limit"`
+	CircuitBreaker CircuitBreakerConfig `mapstructure:"circuit_breaker"`
 }
 
 type BackendConfig struct {
 	URL string `mapstructure:"url"`
+}
+
+type CircuitBreakerConfig struct {
+	Enabled     bool   `mapstructure:"enabled"`
+	MaxRequests uint32 `mapstructure:"max_requests"`
+	Interval    int    `mapstructure:"interval"`
+	Timeout     int    `mapstructure:"timeout"`
 }
 
 func LoadConfig(configPath string) (*AppConfig, error) {
