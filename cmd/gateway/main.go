@@ -22,7 +22,8 @@ func main() {
 		log.Fatalf("Fatal error: %v", err)
 	}
 
-	mux := core.SetupRoutes(cfg)
+	rdb := core.InitRedis(cfg.Security.RedisAddr)
+	mux := core.SetupRoutes(cfg, rdb)
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	server := &http.Server{

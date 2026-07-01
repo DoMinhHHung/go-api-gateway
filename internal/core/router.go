@@ -9,9 +9,10 @@ import (
 
 	"github.com/DoMinhHHung/go-api-gateway/internal/config"
 	"github.com/DoMinhHHung/go-api-gateway/internal/middlewares"
+	"github.com/redis/go-redis/v9"
 )
 
-func SetupRoutes(cfg *config.AppConfig) *http.ServeMux {
+func SetupRoutes(cfg *config.AppConfig, rdb *redis.Client) *http.ServeMux {
 	mux := http.NewServeMux()
 	registry := middlewares.InitRegistry(cfg)
 
@@ -41,6 +42,10 @@ func SetupRoutes(cfg *config.AppConfig) *http.ServeMux {
 
 			if len(route.Middlewares) > 0 {
 				handler = middlewares.ApplyChain(handler, route.Middlewares, registry)
+			}
+
+			if route.RateLimit.Enabled {
+				handler = middlewares.RateLimit(rdb, route.ID, route.RateLimit)(handler)
 			}
 
 			mux.Handle(pattern, handler)

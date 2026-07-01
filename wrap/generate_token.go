@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"github.com/golang-jwt/jwt/v5"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 func main() {
@@ -11,7 +12,7 @@ func main() {
 	claims := jwt.MapClaims{
 		"user_id": "U-9999",
 		"role":    "admin",
-		"exp":     time.Now().Add(time.Hour * 1).Unix(), // Hết hạn sau 1 tiếng
+		"exp":     time.Now().Add(time.Hour * 1).Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, _ := token.SignedString(secret)

@@ -22,6 +22,13 @@ type ServerConfig struct {
 type SecurityConfig struct {
 	JWTSecret string
 	APIKey    string
+	RedisAddr string
+}
+
+type RateLimitConfig struct {
+	Enabled  bool `mapstructure:"enabled"`
+	Rate     int  `mapstructure:"rate"`
+	Capacity int  `mapstructure:"capacity"`
 }
 
 type RouteConfig struct {
@@ -30,6 +37,7 @@ type RouteConfig struct {
 	Methods     []string        `mapstructure:"methods"`
 	Backends    []BackendConfig `mapstructure:"backends"`
 	Middlewares []string        `mapstructure:"middlewares"`
+	RateLimit   RateLimitConfig `mapstructure:"rate_limit"`
 }
 
 type BackendConfig struct {
@@ -53,6 +61,12 @@ func LoadConfig(configPath string) (*AppConfig, error) {
 
 	config.Security.JWTSecret = viper.GetString("JWT_SECRET")
 	config.Security.APIKey = viper.GetString("API_KEY")
+
+	redisAddr := viper.GetString("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+	config.Security.RedisAddr = redisAddr
 
 	if envPort := viper.GetInt("PORT"); envPort != 0 {
 		config.Server.Port = envPort

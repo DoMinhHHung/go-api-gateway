@@ -15,3 +15,7 @@ routes:
     backends:
       - url: "http://localhost:8082"
     middlewares: ["jwt"]
+    rate_limit:
+      enabled: true
+      rate: 1      
+      capacity: 2
