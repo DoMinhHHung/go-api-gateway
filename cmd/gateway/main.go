@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
+	"os"
 
 	"github.com/DoMinhHHung/go-api-gateway/internal/config"
 	"github.com/DoMinhHHung/go-api-gateway/internal/core"
@@ -11,10 +13,13 @@ import (
 )
 
 func main() {
-	log.Println("Starting API Gateway...")
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+
+	slog.Info("Starting API Gateway...")
 
 	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, using environment variables")
+		slog.Warn("No .env file found, using environment variables")
 	}
 
 	cfg, err := config.LoadConfig("config.yaml")
@@ -33,7 +38,7 @@ func main() {
 		WriteTimeout: cfg.Server.WriteTimeout,
 	}
 
-	log.Printf("API Gateway running at http://localhost%s", addr)
+	slog.Info("API Gateway running", "url", "http://localhost"+addr)
 	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("Server crashed: %v", err)
 	}

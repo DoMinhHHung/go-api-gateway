@@ -1,7 +1,6 @@
 package core
 
 import (
-	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -58,7 +57,6 @@ func SetupRoutes(cfg *config.AppConfig, rdb *redis.Client) *http.ServeMux {
 			pattern := method + " " + route.Path
 
 			var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				log.Printf("[%s] Forwarding %s %s", route.ID, r.Method, r.URL.Path)
 				proxy.ServeHTTP(w, r)
 			})
 

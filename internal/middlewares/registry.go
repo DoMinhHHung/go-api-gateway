@@ -12,6 +12,7 @@ func InitRegistry(cfg *config.AppConfig) map[string]Middleware {
 	return map[string]Middleware{
 		"api_key": APIKeyAuth(cfg.Security.APIKey),
 		"jwt":     JWTAuth(cfg.Security.JWTSecret),
+		"logging": Logging(),
 	}
 }
 

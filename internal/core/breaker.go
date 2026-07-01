@@ -23,7 +23,7 @@ func (bt *BreakerTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		}
 
 		if resp.StatusCode >= 500 {
-			return resp, errors.New("Service is unavailable")
+			return resp, errors.New("Service is unavailable!")
 		}
 
 		return resp, nil
