@@ -1,9 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"net/http"
 
 	"github.com/DoMinhHHung/go-api-gateway/internal/config"
+	"github.com/DoMinhHHung/go-api-gateway/internal/core"
 )
 
 func main() {
@@ -14,12 +17,18 @@ func main() {
 		log.Fatalf("Fatal error: %v", err)
 	}
 
-	log.Printf("Server running on port: %d", cfg.Server.Port)
-	log.Printf("Read Timeout: %v", cfg.Server.ReadTimeout)
-	log.Printf("Write Timeout: %v", cfg.Server.WriteTimeout)
+	mux := core.SetupRoutes(cfg)
 
-	log.Println("Loaded routes:")
-	for _, route := range cfg.Routes {
-		log.Printf(" - [%s] Route %s -> Backend %s", route.ID, route.Path, route.Backends[0].URL)
+	addr := fmt.Sprintf(":%d", cfg.Server.Port)
+	server := &http.Server{
+		Addr:         addr,
+		Handler:      mux,
+		ReadTimeout:  cfg.Server.ReadTimeout,
+		WriteTimeout: cfg.Server.WriteTimeout,
+	}
+
+	log.Printf("API Gateway running at http://localhost%s", addr)
+	if err := server.ListenAndServe(); err != nil {
+		log.Fatalf("Server crashed: %v", err)
 	}
 }
