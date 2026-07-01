@@ -14,3 +14,4 @@ routes:
     methods: ["GET", "POST"]
     backends:
       - url: "http://localhost:8082"
+    middlewares: ["jwt"]

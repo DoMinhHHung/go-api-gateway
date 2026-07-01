@@ -7,10 +7,15 @@ import (
 
 	"github.com/DoMinhHHung/go-api-gateway/internal/config"
 	"github.com/DoMinhHHung/go-api-gateway/internal/core"
+	"github.com/joho/godotenv"
 )
 
 func main() {
 	log.Println("Starting API Gateway...")
+
+	if err := godotenv.Load(); err != nil {
+		log.Println("No .env file found, using environment variables")
+	}
 
 	cfg, err := config.LoadConfig("config.yaml")
 	if err != nil {
