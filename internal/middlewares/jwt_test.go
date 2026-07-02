@@ -96,7 +96,10 @@ func TestJWTAuth_RejectsAlgConfusion(t *testing.T) {
 
 func TestJWTAuth_StripsClientSuppliedIdentityHeaders(t *testing.T) {
 	priv, pub := genKeyPair(t)
-	token := signRS256(t, priv, jwt.MapClaims{"user_id": "real-user"})
+	token := signRS256(t, priv, jwt.MapClaims{
+		"user_id": "real-user",
+		"exp":     time.Now().Add(time.Hour).Unix(),
+	})
 
 	var capturedReq *http.Request
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -111,6 +114,9 @@ func TestJWTAuth_StripsClientSuppliedIdentityHeaders(t *testing.T) {
 
 	JWTAuth(pub)(inner).ServeHTTP(rec, req)
 
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d — token setup is broken, check exp claim", rec.Code)
+	}
 	if got := capturedReq.Header.Get("X-User-Id"); got != "real-user" {
 		t.Fatalf("expected spoofed header to be overwritten with token claim, got %q", got)
 	}
@@ -126,5 +132,25 @@ func TestJWTAuth_MissingHeader_Rejected(t *testing.T) {
 
 	if hit || rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 with no handler hit, got %d hit=%v", rec.Code, hit)
+	}
+}
+
+// TestJWTAuth_RejectsTokenWithoutExpClaim guards the jwt.WithExpirationRequired()
+// fix. jwt/v5 only validates exp *if present* — without this option a token
+// with no exp claim never expires.
+func TestJWTAuth_RejectsTokenWithoutExpClaim(t *testing.T) {
+	priv, pub := genKeyPair(t)
+	// no "exp" key at all
+	token := signRS256(t, priv, jwt.MapClaims{"user_id": "u123"})
+
+	hit := false
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+
+	JWTAuth(pub)(newTestHandler(&hit)).ServeHTTP(rec, req)
+
+	if hit || rec.Code != http.StatusUnauthorized {
+		t.Fatalf("token without exp must be rejected, got status=%d hit=%v", rec.Code, hit)
 	}
 }

@@ -33,7 +33,7 @@ func JWTAuth(publicKey *rsa.PublicKey) Middleware {
 					return nil, fmt.Errorf("invalid signing method: %v", token.Header["alg"])
 				}
 				return publicKey, nil
-			})
+			}, jwt.WithExpirationRequired())
 
 			if err != nil || !token.Valid {
 				http.Error(w, `{"error": "Unauthorized: Token invalid or expired"}`, http.StatusUnauthorized)
