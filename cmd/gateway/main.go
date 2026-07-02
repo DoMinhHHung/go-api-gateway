@@ -27,7 +27,7 @@ func main() {
 		log.Fatalf("Fatal error: %v", err)
 	}
 
-	rdb := core.InitRedis(cfg.Security.RedisAddr)
+	rdb := core.InitRedis(cfg.Security.RedisAddr, cfg.Security.RedisPassword, cfg.Security.RedisTLS)
 	mux := core.SetupRoutes(cfg, rdb)
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)

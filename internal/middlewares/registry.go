@@ -11,7 +11,7 @@ type Middleware func(http.Handler) http.Handler
 func InitRegistry(cfg *config.AppConfig) map[string]Middleware {
 	return map[string]Middleware{
 		"api_key": APIKeyAuth(cfg.Security.APIKey),
-		"jwt":     JWTAuth(cfg.Security.JWTSecret),
+		"jwt":     JWTAuth(cfg.Security.JWTPublicKey),
 		"logging": Logging(),
 	}
 }

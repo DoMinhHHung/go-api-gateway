@@ -9,6 +9,16 @@ routes:
     methods: ["POST"]
     backends:
       - url: "http://localhost:8081"
+    middlewares: ["logging"]
+    rate_limit:
+      enabled: true
+      rate: 0.2      
+      capacity: 5   
+    circuit_breaker:
+      enabled: true
+      max_requests: 1
+      interval: 10
+      timeout: 15
   - id: user_service
     path: /api/v1/users
     methods: ["GET", "POST"]

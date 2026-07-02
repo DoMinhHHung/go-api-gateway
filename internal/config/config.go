@@ -3,6 +3,8 @@ package config
 import (
 	"crypto/rsa"
 	"fmt"
+	"log/slog"
+	"net/url"
 	"os"
 	"time"
 
@@ -23,15 +25,17 @@ type ServerConfig struct {
 }
 
 type SecurityConfig struct {
-	JWTPublicKey *rsa.PublicKey
-	APIKey       string
-	RedisAddr    string
+	JWTPublicKey  *rsa.PublicKey
+	APIKey        string
+	RedisAddr     string
+	RedisPassword string
+	RedisTLS      bool
 }
 
 type RateLimitConfig struct {
-	Enabled  bool `mapstructure:"enabled"`
-	Rate     int  `mapstructure:"rate"`
-	Capacity int  `mapstructure:"capacity"`
+	Enabled  bool    `mapstructure:"enabled"`
+	Rate     float64 `mapstructure:"rate"`
+	Capacity int     `mapstructure:"capacity"`
 }
 
 type RouteConfig struct {
@@ -94,10 +98,49 @@ func LoadConfig(configPath string) (*AppConfig, error) {
 		redisAddr = "localhost:6379"
 	}
 	cfg.Security.RedisAddr = redisAddr
+	cfg.Security.RedisPassword = viper.GetString("REDIS_PASSWORD")
+	cfg.Security.RedisTLS = viper.GetBool("REDIS_TLS_ENABLED")
 
 	if envPort := viper.GetInt("PORT"); envPort != 0 {
 		cfg.Server.Port = envPort
 	}
 
+	if err := validateRoutes(cfg.Routes); err != nil {
+		return nil, err
+	}
+
 	return &cfg, nil
+}
+
+func validateRoutes(routes []RouteConfig) error {
+	seen := make(map[string]bool, len(routes))
+	for _, route := range routes {
+		if route.ID == "" {
+			return fmt.Errorf("route config has empty id")
+		}
+		if seen[route.ID] {
+			return fmt.Errorf("duplicate route id %q", route.ID)
+		}
+		seen[route.ID] = true
+
+		if route.Path == "" {
+			return fmt.Errorf("route %q: path is required", route.ID)
+		}
+		if len(route.Methods) == 0 {
+			return fmt.Errorf("route %q: at least one method is required", route.ID)
+		}
+		if len(route.Backends) == 0 {
+			return fmt.Errorf("route %q: at least one backend is required", route.ID)
+		}
+		if len(route.Backends) > 1 {
+			slog.Warn("route declares multiple backends but load balancing is not implemented; only the first backend will be used", "route", route.ID)
+		}
+		for _, b := range route.Backends {
+			u, err := url.Parse(b.URL)
+			if err != nil || u.Scheme == "" || u.Host == "" {
+				return fmt.Errorf("route %q: invalid backend url %q", route.ID, b.URL)
+			}
+		}
+	}
+	return nil
 }
