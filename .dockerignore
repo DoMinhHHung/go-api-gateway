@@ -3,3 +3,5 @@
 .vscode
 *.exe
 **/*.test
+.env
+*.pem

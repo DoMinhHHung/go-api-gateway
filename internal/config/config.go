@@ -1,9 +1,12 @@
 package config
 
 import (
+	"crypto/rsa"
 	"fmt"
+	"os"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/spf13/viper"
 )
 
@@ -20,9 +23,9 @@ type ServerConfig struct {
 }
 
 type SecurityConfig struct {
-	JWTSecret string
-	APIKey    string
-	RedisAddr string
+	JWTPublicKey *rsa.PublicKey
+	APIKey       string
+	RedisAddr    string
 }
 
 type RateLimitConfig struct {
@@ -55,30 +58,46 @@ type CircuitBreakerConfig struct {
 func LoadConfig(configPath string) (*AppConfig, error) {
 	viper.SetConfigFile(configPath)
 	viper.SetConfigType("yaml")
-
 	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err != nil {
-		return nil, fmt.Errorf("Error while reading config file: %w", err)
+		return nil, fmt.Errorf("error reading config file: %w", err)
 	}
 
-	var config AppConfig
-	if err := viper.Unmarshal(&config); err != nil {
-		return nil, fmt.Errorf("Error while unmarshaling config: %w", err)
+	var cfg AppConfig
+	if err := viper.Unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("error unmarshaling config: %w", err)
 	}
 
-	config.Security.JWTSecret = viper.GetString("JWT_SECRET")
-	config.Security.APIKey = viper.GetString("API_KEY")
+	cfg.Security.APIKey = viper.GetString("API_KEY")
+	if cfg.Security.APIKey == "" {
+		return nil, fmt.Errorf("API_KEY is not set — refusing to start with API key auth disabled")
+	}
 
+	pubKeyPath := viper.GetString("JWT_PUBLIC_KEY_PATH")
+	if pubKeyPath == "" {
+		return nil, fmt.Errorf("JWT_PUBLIC_KEY_PATH is not set")
+	}
+	pubKeyBytes, err := os.ReadFile(pubKeyPath)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read JWT public key at %s: %w", pubKeyPath, err)
+	}
+	pubKey, err := jwt.ParseRSAPublicKeyFromPEM(pubKeyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("invalid JWT public key format: %w", err)
+	}
+	cfg.Security.JWTPublicKey = pubKey
+
+	// --- Redis ---
 	redisAddr := viper.GetString("REDIS_ADDR")
 	if redisAddr == "" {
 		redisAddr = "localhost:6379"
 	}
-	config.Security.RedisAddr = redisAddr
+	cfg.Security.RedisAddr = redisAddr
 
 	if envPort := viper.GetInt("PORT"); envPort != 0 {
-		config.Server.Port = envPort
+		cfg.Server.Port = envPort
 	}
 
-	return &config, nil
+	return &cfg, nil
 }

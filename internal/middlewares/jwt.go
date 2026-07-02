@@ -1,6 +1,7 @@
 package middlewares
 
 import (
+	"crypto/rsa"
 	"fmt"
 	"net/http"
 	"strings"
@@ -8,11 +9,11 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-func JWTAuth(secret string) Middleware {
-	secretBytes := []byte(secret)
-
+func JWTAuth(publicKey *rsa.PublicKey) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.Header.Del("X-User-Id")
+			r.Header.Del("X-User-Role")
 
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" {
@@ -28,10 +29,10 @@ func JWTAuth(secret string) Middleware {
 			tokenString := parts[1]
 
 			token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-				if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
 					return nil, fmt.Errorf("invalid signing method: %v", token.Header["alg"])
 				}
-				return secretBytes, nil
+				return publicKey, nil
 			})
 
 			if err != nil || !token.Valid {
