@@ -43,6 +43,8 @@ func TestJWTAuth_ValidToken_Passes(t *testing.T) {
 		"user_id": "u123",
 		"role":    "admin",
 		"exp":     time.Now().Add(time.Hour).Unix(),
+		"aud":     "gateway-api",
+		"iss":     "gateway-api",
 	})
 
 	hit := false
@@ -57,7 +59,7 @@ func TestJWTAuth_ValidToken_Passes(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 
-	JWTAuth(pub)(inner).ServeHTTP(rec, req)
+	JWTAuth(pub, "gateway-api", "gateway-api")(inner).ServeHTTP(rec, req)
 
 	if !hit || rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 and handler hit, got %d hit=%v", rec.Code, hit)
@@ -77,7 +79,7 @@ func TestJWTAuth_InvalidAuthorizationFormat_Rejected(t *testing.T) {
 	req.Header.Set("Authorization", "Token not-a-bearer-token")
 	rec := httptest.NewRecorder()
 
-	JWTAuth(pub)(newTestHandler(&hit)).ServeHTTP(rec, req)
+	JWTAuth(pub, "gateway-api", "gateway-api")(newTestHandler(&hit)).ServeHTTP(rec, req)
 
 	if hit || rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 for malformed auth header, got %d hit=%v", rec.Code, hit)
@@ -92,7 +94,7 @@ func TestJWTAuth_InvalidAuthorizationFormat_Rejected(t *testing.T) {
 func TestJWTAuth_RejectsAlgConfusion(t *testing.T) {
 	_, pub := genKeyPair(t)
 
-	claims := jwt.MapClaims{"user_id": "attacker", "role": "admin"}
+	claims := jwt.MapClaims{"user_id": "attacker", "role": "admin", "aud": "gateway-api", "iss": "gateway-api"}
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	forged, err := tok.SignedString([]byte("some-guessable-or-known-string"))
 	if err != nil {
@@ -104,7 +106,7 @@ func TestJWTAuth_RejectsAlgConfusion(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+forged)
 	rec := httptest.NewRecorder()
 
-	JWTAuth(pub)(newTestHandler(&hit)).ServeHTTP(rec, req)
+	JWTAuth(pub, "gateway-api", "gateway-api")(newTestHandler(&hit)).ServeHTTP(rec, req)
 
 	if hit || rec.Code != http.StatusUnauthorized {
 		t.Fatalf("alg-confusion token must be rejected, got status=%d hit=%v", rec.Code, hit)
@@ -116,6 +118,8 @@ func TestJWTAuth_StripsClientSuppliedIdentityHeaders(t *testing.T) {
 	token := signRS256(t, priv, jwt.MapClaims{
 		"user_id": "real-user",
 		"exp":     time.Now().Add(time.Hour).Unix(),
+		"aud":     "gateway-api",
+		"iss":     "gateway-api",
 	})
 
 	var capturedReq *http.Request
@@ -129,7 +133,7 @@ func TestJWTAuth_StripsClientSuppliedIdentityHeaders(t *testing.T) {
 	req.Header.Set("X-User-Id", "spoofed-admin") // attacker-supplied, must be overwritten
 	rec := httptest.NewRecorder()
 
-	JWTAuth(pub)(inner).ServeHTTP(rec, req)
+	JWTAuth(pub, "gateway-api", "gateway-api")(inner).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d — token setup is broken, check exp claim", rec.Code)
@@ -145,7 +149,7 @@ func TestJWTAuth_MissingHeader_Rejected(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/x", nil)
 	rec := httptest.NewRecorder()
 
-	JWTAuth(pub)(newTestHandler(&hit)).ServeHTTP(rec, req)
+	JWTAuth(pub, "gateway-api", "gateway-api")(newTestHandler(&hit)).ServeHTTP(rec, req)
 
 	if hit || rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 with no handler hit, got %d hit=%v", rec.Code, hit)
@@ -158,14 +162,14 @@ func TestJWTAuth_MissingHeader_Rejected(t *testing.T) {
 func TestJWTAuth_RejectsTokenWithoutExpClaim(t *testing.T) {
 	priv, pub := genKeyPair(t)
 	// no "exp" key at all
-	token := signRS256(t, priv, jwt.MapClaims{"user_id": "u123"})
+	token := signRS256(t, priv, jwt.MapClaims{"user_id": "u123", "aud": "gateway-api", "iss": "gateway-api"})
 
 	hit := false
 	req := httptest.NewRequest(http.MethodGet, "/x", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 
-	JWTAuth(pub)(newTestHandler(&hit)).ServeHTTP(rec, req)
+	JWTAuth(pub, "gateway-api", "gateway-api")(newTestHandler(&hit)).ServeHTTP(rec, req)
 
 	if hit || rec.Code != http.StatusUnauthorized {
 		t.Fatalf("token without exp must be rejected, got status=%d hit=%v", rec.Code, hit)

@@ -9,7 +9,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-func JWTAuth(publicKey *rsa.PublicKey) Middleware {
+func JWTAuth(publicKey *rsa.PublicKey, audience, issuer string) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			r.Header.Del("X-User-Id")
@@ -33,7 +33,7 @@ func JWTAuth(publicKey *rsa.PublicKey) Middleware {
 					return nil, fmt.Errorf("invalid signing method: %v", token.Header["alg"])
 				}
 				return publicKey, nil
-			}, jwt.WithExpirationRequired())
+			}, jwt.WithExpirationRequired(), jwt.WithAudience(audience), jwt.WithIssuer(issuer))
 
 			if err != nil || !token.Valid {
 				http.Error(w, `{"error": "Unauthorized: Token invalid or expired"}`, http.StatusUnauthorized)

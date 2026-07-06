@@ -23,7 +23,8 @@ func TestNewReverseProxy_DirectsRequestAndHandlesErrors(t *testing.T) {
 		t.Fatalf("parse target: %v", err)
 	}
 
-	proxy := newReverseProxy(target, "route-1", config.CircuitBreakerConfig{Enabled: false}, config.DefaultResponseHeaderTimeout)
+	route := config.RouteConfig{ID: "route-1", Path: "/api", CircuitBreaker: config.CircuitBreakerConfig{Enabled: false}}
+	proxy := newReverseProxy(target, route)
 	req := httptest.NewRequest(http.MethodGet, "http://original.local/api?q=1", nil)
 	proxy.Director(req)
 
@@ -135,7 +136,7 @@ func TestNewReverseProxy_PerRouteResponseHeaderTimeout(t *testing.T) {
 	}
 
 	t.Run("short timeout triggers bad gateway before backend responds", func(t *testing.T) {
-		proxy := newReverseProxy(target, "route-fast-timeout", config.CircuitBreakerConfig{Enabled: false}, 50*time.Millisecond)
+		proxy := newReverseProxy(target, config.RouteConfig{ID: "route-fast-timeout", Path: "/x", CircuitBreaker: config.CircuitBreakerConfig{Enabled: false}, Timeout: config.TimeoutConfig{ResponseHeader: 50 * time.Millisecond}})
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/x", nil)
 		proxy.ServeHTTP(rec, req)
@@ -146,7 +147,7 @@ func TestNewReverseProxy_PerRouteResponseHeaderTimeout(t *testing.T) {
 	})
 
 	t.Run("long timeout allows slow backend to complete", func(t *testing.T) {
-		proxy := newReverseProxy(target, "route-slow-timeout", config.CircuitBreakerConfig{Enabled: false}, 2*time.Second)
+		proxy := newReverseProxy(target, config.RouteConfig{ID: "route-slow-timeout", Path: "/x", CircuitBreaker: config.CircuitBreakerConfig{Enabled: false}, Timeout: config.TimeoutConfig{ResponseHeader: 2 * time.Second}})
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/x", nil)
 		proxy.ServeHTTP(rec, req)
@@ -155,4 +156,121 @@ func TestNewReverseProxy_PerRouteResponseHeaderTimeout(t *testing.T) {
 			t.Fatalf("expected 200 when timeout is long enough, got %d", rec.Code)
 		}
 	})
+}
+
+func TestSetupRoutes_RoundRobinAndPathRewrite(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("start miniredis: %v", err)
+	}
+	t.Cleanup(mr.Close)
+
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() {
+		_ = rdb.Close()
+	})
+
+	var firstHits int32
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&firstHits, 1)
+		if got := r.Header.Get("X-Request-Id"); got == "" {
+			t.Fatal("expected request id to reach backend")
+		}
+		_, _ = io.WriteString(w, "first:"+r.URL.Path)
+	}))
+	t.Cleanup(first.Close)
+
+	var secondHits int32
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&secondHits, 1)
+		_, _ = io.WriteString(w, "second:"+r.URL.Path)
+	}))
+	t.Cleanup(second.Close)
+
+	cfg := &config.AppConfig{
+		Server:   config.ServerConfig{MaxBodyBytes: config.DefaultMaxBodyBytes},
+		Security: config.SecurityConfig{APIKey: "test-api-key", JWTAudience: "gateway-api", JWTIssuer: "gateway-api"},
+		Routes: []config.RouteConfig{{
+			ID:          "round-robin",
+			Path:        "/api/v1/users",
+			Methods:     []string{http.MethodGet},
+			Backends:    []config.BackendConfig{{URL: first.URL}, {URL: second.URL}},
+			Middlewares: []string{"logging"},
+			StripPrefix: true,
+		}},
+	}
+
+	mux := SetupRoutes(cfg, rdb)
+
+	for i := 0; i < 4; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/users/42", nil)
+		req.Header.Set("X-API-Key", "test-api-key")
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("request %d expected 200, got %d body=%s", i, rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "/42") {
+			t.Fatalf("expected stripped path to reach backend, got %q", rec.Body.String())
+		}
+		if got := rec.Header().Get("X-Request-Id"); got == "" {
+			t.Fatal("expected request id response header")
+		}
+	}
+
+	if got := atomic.LoadInt32(&firstHits); got != 2 {
+		t.Fatalf("expected first backend to receive 2 requests, got %d", got)
+	}
+	if got := atomic.LoadInt32(&secondHits); got != 2 {
+		t.Fatalf("expected second backend to receive 2 requests, got %d", got)
+	}
+}
+
+func TestSetupRoutes_BodyLimitAndMetrics(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("start miniredis: %v", err)
+	}
+	t.Cleanup(mr.Close)
+
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() {
+		_ = rdb.Close()
+	})
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(backend.Close)
+
+	cfg := &config.AppConfig{
+		Server:   config.ServerConfig{MaxBodyBytes: 4},
+		Security: config.SecurityConfig{APIKey: "test-api-key", JWTAudience: "gateway-api", JWTIssuer: "gateway-api"},
+		Routes: []config.RouteConfig{{
+			ID:          "body-limit",
+			Path:        "/upload",
+			Methods:     []string{http.MethodPost},
+			Backends:    []config.BackendConfig{{URL: backend.URL}},
+			Middlewares: []string{"logging"},
+		}},
+	}
+
+	mux := SetupRoutes(cfg, rdb)
+
+	req := httptest.NewRequest(http.MethodPost, "/upload", strings.NewReader("too-large-body"))
+	req.Header.Set("X-API-Key", "test-api-key")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected 413 when body exceeds limit, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	metricsRec := httptest.NewRecorder()
+	mux.ServeHTTP(metricsRec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if metricsRec.Code != http.StatusOK || !strings.Contains(metricsRec.Body.String(), "gateway_http_requests_total") {
+		t.Fatalf("expected metrics endpoint output, got code=%d body=%s", metricsRec.Code, metricsRec.Body.String())
+	}
 }

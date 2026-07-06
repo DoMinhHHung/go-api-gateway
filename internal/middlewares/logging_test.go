@@ -13,7 +13,7 @@ func TestLogging_PassesThroughRequest(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 	})
 
-	handler := Logging()(inner)
+	handler := Logging(false)(inner)
 
 	req := httptest.NewRequest(http.MethodPost, "/x", nil)
 	rec := httptest.NewRecorder()

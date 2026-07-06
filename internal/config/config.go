@@ -3,9 +3,9 @@ package config
 import (
 	"crypto/rsa"
 	"fmt"
-	"log/slog"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -23,10 +23,13 @@ type ServerConfig struct {
 	ReadTimeout       time.Duration `mapstructure:"read_timeout"`
 	WriteTimeout      time.Duration `mapstructure:"write_timeout"`
 	TrustProxyHeaders bool          `mapstructure:"trust_proxy_headers"`
+	MaxBodyBytes      int64         `mapstructure:"max_body_bytes"`
 }
 
 type SecurityConfig struct {
 	JWTPublicKey  *rsa.PublicKey
+	JWTAudience   string
+	JWTIssuer     string
 	APIKey        string
 	RedisAddr     string
 	RedisPassword string
@@ -50,12 +53,15 @@ type RouteConfig struct {
 	Methods        []string             `mapstructure:"methods"`
 	Backends       []BackendConfig      `mapstructure:"backends"`
 	Middlewares    []string             `mapstructure:"middlewares"`
+	StripPrefix    bool                 `mapstructure:"strip_prefix"`
+	RewritePrefix  string               `mapstructure:"rewrite_prefix"`
 	RateLimit      RateLimitConfig      `mapstructure:"rate_limit"`
 	CircuitBreaker CircuitBreakerConfig `mapstructure:"circuit_breaker"`
 	Timeout        TimeoutConfig        `mapstructure:"timeout"`
 }
 
 const DefaultResponseHeaderTimeout = 5 * time.Second
+const DefaultMaxBodyBytes int64 = 1 << 20
 
 func (r RouteConfig) EffectiveResponseHeaderTimeout() time.Duration {
 	if r.Timeout.ResponseHeader <= 0 {
@@ -90,9 +96,24 @@ func LoadConfig(configPath string) (*AppConfig, error) {
 		return nil, fmt.Errorf("error unmarshaling config: %w", err)
 	}
 
+	if cfg.Server.MaxBodyBytes <= 0 {
+		cfg.Server.MaxBodyBytes = DefaultMaxBodyBytes
+	}
+	if envMaxBodyBytes := v.GetInt64("MAX_BODY_BYTES"); envMaxBodyBytes > 0 {
+		cfg.Server.MaxBodyBytes = envMaxBodyBytes
+	}
+
 	cfg.Security.APIKey = v.GetString("API_KEY")
 	if cfg.Security.APIKey == "" {
 		return nil, fmt.Errorf("API_KEY is not set — refusing to start with API key auth disabled")
+	}
+	cfg.Security.JWTAudience = v.GetString("JWT_AUDIENCE")
+	if cfg.Security.JWTAudience == "" {
+		return nil, fmt.Errorf("JWT_AUDIENCE is not set")
+	}
+	cfg.Security.JWTIssuer = v.GetString("JWT_ISSUER")
+	if cfg.Security.JWTIssuer == "" {
+		return nil, fmt.Errorf("JWT_ISSUER is not set")
 	}
 
 	pubKeyPath := v.GetString("JWT_PUBLIC_KEY_PATH")
@@ -120,6 +141,9 @@ func LoadConfig(configPath string) (*AppConfig, error) {
 
 	if envPort := v.GetInt("PORT"); envPort != 0 {
 		cfg.Server.Port = envPort
+	}
+	if v.Get("TRUST_PROXY_HEADERS") != nil {
+		cfg.Server.TrustProxyHeaders = v.GetBool("TRUST_PROXY_HEADERS")
 	}
 
 	if err := validateRoutes(cfg.Routes); err != nil {
@@ -149,8 +173,14 @@ func validateRoutes(routes []RouteConfig) error {
 		if len(route.Backends) == 0 {
 			return fmt.Errorf("route %q: at least one backend is required", route.ID)
 		}
-		if len(route.Backends) > 1 {
-			slog.Warn("route declares multiple backends but load balancing is not implemented; only the first backend will be used", "route", route.ID)
+		if !strings.HasPrefix(route.Path, "/") {
+			return fmt.Errorf("route %q: path must start with /", route.ID)
+		}
+		if route.RewritePrefix != "" && !strings.HasPrefix(route.RewritePrefix, "/") {
+			return fmt.Errorf("route %q: rewrite_prefix must start with /", route.ID)
+		}
+		if route.StripPrefix && route.RewritePrefix != "" {
+			return fmt.Errorf("route %q: strip_prefix and rewrite_prefix cannot both be set", route.ID)
 		}
 		for _, b := range route.Backends {
 			u, err := url.Parse(b.URL)

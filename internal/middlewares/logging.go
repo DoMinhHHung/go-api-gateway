@@ -25,7 +25,7 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.wroteHeader = true
 }
 
-func Logging() Middleware {
+func Logging(trustProxyHeaders bool) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
@@ -41,7 +41,8 @@ func Logging() Middleware {
 				slog.String("path", r.URL.Path),
 				slog.Int("status", wrapped.status),
 				slog.String("latency", latency.String()),
-				slog.String("ip", r.RemoteAddr),
+				slog.String("client_ip", clientIP(r, trustProxyHeaders)),
+				slog.String("request_id", r.Header.Get(requestIDHeader)),
 			)
 		})
 	}

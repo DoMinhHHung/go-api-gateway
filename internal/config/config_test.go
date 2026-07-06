@@ -58,6 +58,7 @@ func testConfigYAML() string {
   read_timeout: 2s
   write_timeout: 3s
   trust_proxy_headers: true
+  max_body_bytes: 4096
 routes:
   - id: route-1
     path: /api
@@ -70,6 +71,8 @@ routes:
 func TestLoadConfig_Success(t *testing.T) {
 	configPath := writeTempConfig(t, testConfigYAML())
 	t.Setenv("API_KEY", "test-api-key")
+	t.Setenv("JWT_AUDIENCE", "gateway-api")
+	t.Setenv("JWT_ISSUER", "gateway-api")
 	t.Setenv("JWT_PUBLIC_KEY_PATH", generateTestRSAPublicKeyPEM(t))
 	t.Setenv("REDIS_ADDR", "redis.example:6380")
 	t.Setenv("REDIS_PASSWORD", "secret")
@@ -87,8 +90,14 @@ func TestLoadConfig_Success(t *testing.T) {
 	if !cfg.Server.TrustProxyHeaders {
 		t.Fatal("expected trust proxy headers to be loaded")
 	}
+	if cfg.Server.MaxBodyBytes != 4096 {
+		t.Fatalf("expected max body bytes from yaml, got %d", cfg.Server.MaxBodyBytes)
+	}
 	if cfg.Security.APIKey != "test-api-key" {
 		t.Fatalf("expected API key to load, got %q", cfg.Security.APIKey)
+	}
+	if cfg.Security.JWTAudience != "gateway-api" || cfg.Security.JWTIssuer != "gateway-api" {
+		t.Fatalf("unexpected jwt config: %+v", cfg.Security)
 	}
 	if cfg.Security.RedisAddr != "redis.example:6380" || cfg.Security.RedisPassword != "secret" || !cfg.Security.RedisTLS {
 		t.Fatalf("unexpected redis config: %+v", cfg.Security)
@@ -104,6 +113,8 @@ func TestLoadConfig_Success(t *testing.T) {
 func TestLoadConfig_ErrorsWhenAPIKeyMissing(t *testing.T) {
 	configPath := writeTempConfig(t, testConfigYAML())
 	t.Setenv("API_KEY", "")
+	t.Setenv("JWT_AUDIENCE", "gateway-api")
+	t.Setenv("JWT_ISSUER", "gateway-api")
 	t.Setenv("JWT_PUBLIC_KEY_PATH", generateTestRSAPublicKeyPEM(t))
 
 	_, err := LoadConfig(configPath)
@@ -115,6 +126,8 @@ func TestLoadConfig_ErrorsWhenAPIKeyMissing(t *testing.T) {
 func TestLoadConfig_ErrorsWhenJWTPublicKeyPathMissing(t *testing.T) {
 	configPath := writeTempConfig(t, testConfigYAML())
 	t.Setenv("API_KEY", "test-api-key")
+	t.Setenv("JWT_AUDIENCE", "gateway-api")
+	t.Setenv("JWT_ISSUER", "gateway-api")
 	t.Setenv("JWT_PUBLIC_KEY_PATH", "")
 
 	_, err := LoadConfig(configPath)
@@ -127,6 +140,8 @@ func TestLoadConfig_ErrorsWhenJWTPublicKeyInvalid(t *testing.T) {
 	configPath := writeTempConfig(t, testConfigYAML())
 	keyPath := copyPublicKey(t, "not a pem file")
 	t.Setenv("API_KEY", "test-api-key")
+	t.Setenv("JWT_AUDIENCE", "gateway-api")
+	t.Setenv("JWT_ISSUER", "gateway-api")
 	t.Setenv("JWT_PUBLIC_KEY_PATH", keyPath)
 
 	_, err := LoadConfig(configPath)

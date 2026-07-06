@@ -2,7 +2,8 @@ server:
   port: 8080
   read_timeout: 10s
   write_timeout: 10s
-  trust_proxy_headers: true
+  trust_proxy_headers: false
+  max_body_bytes: 1048576
 
 routes:
   - id: auth_service

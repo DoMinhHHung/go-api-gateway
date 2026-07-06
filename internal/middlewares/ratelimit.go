@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -134,9 +135,8 @@ func clientIP(r *http.Request, trustProxyHeaders bool) string {
 		}
 	}
 
-	ip := r.RemoteAddr
-	if colonIdx := strings.LastIndex(ip, ":"); colonIdx != -1 {
-		ip = ip[:colonIdx]
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
 	}
-	return ip
+	return r.RemoteAddr
 }

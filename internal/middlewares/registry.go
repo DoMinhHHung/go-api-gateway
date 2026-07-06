@@ -1,9 +1,10 @@
 package middlewares
 
 import (
-	"github.com/DoMinhHHung/go-api-gateway/internal/config"
 	"log"
 	"net/http"
+
+	"github.com/DoMinhHHung/go-api-gateway/internal/config"
 )
 
 type Middleware func(http.Handler) http.Handler
@@ -11,8 +12,8 @@ type Middleware func(http.Handler) http.Handler
 func InitRegistry(cfg *config.AppConfig) map[string]Middleware {
 	return map[string]Middleware{
 		"api_key": APIKeyAuth(cfg.Security.APIKey),
-		"jwt":     JWTAuth(cfg.Security.JWTPublicKey),
-		"logging": Logging(),
+		"jwt":     JWTAuth(cfg.Security.JWTPublicKey, cfg.Security.JWTAudience, cfg.Security.JWTIssuer),
+		"logging": Logging(cfg.Server.TrustProxyHeaders),
 	}
 }
 
