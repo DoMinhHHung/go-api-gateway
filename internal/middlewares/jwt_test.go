@@ -65,6 +65,23 @@ func TestJWTAuth_ValidToken_Passes(t *testing.T) {
 	if capturedReq.Header.Get("X-User-Id") != "u123" {
 		t.Fatalf("expected X-User-Id=u123, got %q", capturedReq.Header.Get("X-User-Id"))
 	}
+	if capturedReq.Header.Get("X-User-Role") != "admin" {
+		t.Fatalf("expected X-User-Role=admin, got %q", capturedReq.Header.Get("X-User-Role"))
+	}
+}
+
+func TestJWTAuth_InvalidAuthorizationFormat_Rejected(t *testing.T) {
+	_, pub := genKeyPair(t)
+	hit := false
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set("Authorization", "Token not-a-bearer-token")
+	rec := httptest.NewRecorder()
+
+	JWTAuth(pub)(newTestHandler(&hit)).ServeHTTP(rec, req)
+
+	if hit || rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for malformed auth header, got %d hit=%v", rec.Code, hit)
+	}
 }
 
 // TestJWTAuth_RejectsAlgConfusion is the critical security test: an attacker

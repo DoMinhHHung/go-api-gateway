@@ -19,9 +19,10 @@ type AppConfig struct {
 }
 
 type ServerConfig struct {
-	Port         int           `mapstructure:"port"`
-	ReadTimeout  time.Duration `mapstructure:"read_timeout"`
-	WriteTimeout time.Duration `mapstructure:"write_timeout"`
+	Port              int           `mapstructure:"port"`
+	ReadTimeout       time.Duration `mapstructure:"read_timeout"`
+	WriteTimeout      time.Duration `mapstructure:"write_timeout"`
+	TrustProxyHeaders bool          `mapstructure:"trust_proxy_headers"`
 }
 
 type SecurityConfig struct {
@@ -60,25 +61,26 @@ type CircuitBreakerConfig struct {
 }
 
 func LoadConfig(configPath string) (*AppConfig, error) {
-	viper.SetConfigFile(configPath)
-	viper.SetConfigType("yaml")
-	viper.AutomaticEnv()
+	v := viper.New()
+	v.SetConfigFile(configPath)
+	v.SetConfigType("yaml")
+	v.AutomaticEnv()
 
-	if err := viper.ReadInConfig(); err != nil {
+	if err := v.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("error reading config file: %w", err)
 	}
 
 	var cfg AppConfig
-	if err := viper.Unmarshal(&cfg); err != nil {
+	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("error unmarshaling config: %w", err)
 	}
 
-	cfg.Security.APIKey = viper.GetString("API_KEY")
+	cfg.Security.APIKey = v.GetString("API_KEY")
 	if cfg.Security.APIKey == "" {
 		return nil, fmt.Errorf("API_KEY is not set — refusing to start with API key auth disabled")
 	}
 
-	pubKeyPath := viper.GetString("JWT_PUBLIC_KEY_PATH")
+	pubKeyPath := v.GetString("JWT_PUBLIC_KEY_PATH")
 	if pubKeyPath == "" {
 		return nil, fmt.Errorf("JWT_PUBLIC_KEY_PATH is not set")
 	}
@@ -93,15 +95,15 @@ func LoadConfig(configPath string) (*AppConfig, error) {
 	cfg.Security.JWTPublicKey = pubKey
 
 	// --- Redis ---
-	redisAddr := viper.GetString("REDIS_ADDR")
+	redisAddr := v.GetString("REDIS_ADDR")
 	if redisAddr == "" {
 		redisAddr = "localhost:6379"
 	}
 	cfg.Security.RedisAddr = redisAddr
-	cfg.Security.RedisPassword = viper.GetString("REDIS_PASSWORD")
-	cfg.Security.RedisTLS = viper.GetBool("REDIS_TLS_ENABLED")
+	cfg.Security.RedisPassword = v.GetString("REDIS_PASSWORD")
+	cfg.Security.RedisTLS = v.GetBool("REDIS_TLS_ENABLED")
 
-	if envPort := viper.GetInt("PORT"); envPort != 0 {
+	if envPort := v.GetInt("PORT"); envPort != 0 {
 		cfg.Server.Port = envPort
 	}
 

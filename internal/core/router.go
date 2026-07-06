@@ -77,7 +77,7 @@ func SetupRoutes(cfg *config.AppConfig, rdb *redis.Client) *http.ServeMux {
 		var handler http.Handler = proxy
 
 		if route.RateLimit.Enabled {
-			handler = middlewares.RateLimit(rdb, route.ID, route.RateLimit)(handler)
+			handler = middlewares.RateLimit(rdb, route.ID, route.RateLimit, cfg.Server.TrustProxyHeaders)(handler)
 		}
 		if len(route.Middlewares) > 0 {
 			handler = middlewares.ApplyChain(handler, route.Middlewares, registry)
