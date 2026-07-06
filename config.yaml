@@ -11,7 +11,6 @@ routes:
     methods: ["POST"]
     backends:
       - url: "http://localhost:8081"
-    middlewares: ["logging"]
     rate_limit:
       enabled: true
       rate: 0.2      
@@ -29,16 +28,16 @@ routes:
     methods: ["GET", "POST"]
     backends:
       - url: "http://localhost:8082"
-    middlewares: ["logging", "jwt"]
+    middlewares: ["jwt"]
     rate_limit:
       enabled: true
       rate: 1      
       capacity: 2
-      fail_closed: false  # route thường: Redis lỗi vẫn cho qua, ưu tiên availability
+      fail_closed: false 
     circuit_breaker:
       enabled: true
       max_requests: 1
       interval: 10
       timeout: 15
     timeout:
-      response_header: 8s   # user_service có thể có query nặng hơn auth
+      response_header: 8s  

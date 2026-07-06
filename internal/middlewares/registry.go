@@ -13,7 +13,6 @@ func InitRegistry(cfg *config.AppConfig) map[string]Middleware {
 	return map[string]Middleware{
 		"api_key": APIKeyAuth(cfg.Security.APIKey),
 		"jwt":     JWTAuth(cfg.Security.JWTPublicKey, cfg.Security.JWTAudience, cfg.Security.JWTIssuer),
-		"logging": Logging(cfg.Server.TrustProxyHeaders),
 	}
 }
 

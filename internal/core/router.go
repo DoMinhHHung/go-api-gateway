@@ -83,8 +83,6 @@ func routeHandler(route config.RouteConfig, registry map[string]middlewares.Midd
 
 	handler := http.Handler(&rrProxy{proxies: backends})
 
-	handler = middlewares.Recovery()(handler)
-
 	if route.RateLimit.Enabled {
 		handler = middlewares.RateLimit(rdb, route.ID, route.RateLimit, trustProxyHeaders)(handler)
 	}
@@ -92,8 +90,10 @@ func routeHandler(route config.RouteConfig, registry map[string]middlewares.Midd
 		handler = middlewares.ApplyChain(handler, route.Middlewares, registry)
 	}
 	handler = middlewares.Metrics(route.ID)(handler)
+	handler = middlewares.Logging(trustProxyHeaders)(handler)
 	handler = middlewares.BodyLimit(maxBodyBytes)(handler)
 	handler = middlewares.RequestID()(handler)
+	handler = middlewares.Recovery()(handler)
 
 	return handler
 }

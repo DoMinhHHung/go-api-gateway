@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/DoMinhHHung/go-api-gateway/internal/config"
+	"github.com/DoMinhHHung/go-api-gateway/internal/middlewares"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
 	"github.com/sony/gobreaker"
@@ -195,7 +196,6 @@ func TestSetupRoutes_RoundRobinAndPathRewrite(t *testing.T) {
 			Path:        "/api/v1/users",
 			Methods:     []string{http.MethodGet},
 			Backends:    []config.BackendConfig{{URL: first.URL}, {URL: second.URL}},
-			Middlewares: []string{"logging"},
 			StripPrefix: true,
 		}},
 	}
@@ -249,11 +249,10 @@ func TestSetupRoutes_BodyLimitAndMetrics(t *testing.T) {
 		Server:   config.ServerConfig{MaxBodyBytes: 4},
 		Security: config.SecurityConfig{APIKey: "test-api-key", JWTAudience: "gateway-api", JWTIssuer: "gateway-api"},
 		Routes: []config.RouteConfig{{
-			ID:          "body-limit",
-			Path:        "/upload",
-			Methods:     []string{http.MethodPost},
-			Backends:    []config.BackendConfig{{URL: backend.URL}},
-			Middlewares: []string{"logging"},
+			ID:       "body-limit",
+			Path:     "/upload",
+			Methods:  []string{http.MethodPost},
+			Backends: []config.BackendConfig{{URL: backend.URL}},
 		}},
 	}
 
@@ -272,5 +271,52 @@ func TestSetupRoutes_BodyLimitAndMetrics(t *testing.T) {
 	mux.ServeHTTP(metricsRec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	if metricsRec.Code != http.StatusOK || !strings.Contains(metricsRec.Body.String(), "gateway_http_requests_total") {
 		t.Fatalf("expected metrics endpoint output, got code=%d body=%s", metricsRec.Code, metricsRec.Body.String())
+	}
+}
+
+func TestRouteHandler_RecoversFromPanicInAnyMiddleware(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("start miniredis: %v", err)
+	}
+	t.Cleanup(mr.Close)
+
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() {
+		_ = rdb.Close()
+	})
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(backend.Close)
+
+	registry := map[string]middlewares.Middleware{
+		"boom": func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				panic("simulated panic before the request ever reaches the backend proxy")
+			})
+		},
+	}
+
+	route := config.RouteConfig{
+		ID:          "panic-route",
+		Path:        "/panic",
+		Backends:    []config.BackendConfig{{URL: backend.URL}},
+		Middlewares: []string{"boom"},
+	}
+
+	handler := routeHandler(route, registry, rdb, false, config.DefaultMaxBodyBytes)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/panic", nil)
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected panic in a custom middleware to be recovered as 500, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "recovered from a panic") {
+		t.Fatalf("expected recovery error body, got %q", rec.Body.String())
 	}
 }

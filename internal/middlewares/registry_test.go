@@ -20,10 +20,14 @@ func TestInitRegistry_ProvidesExpectedMiddlewares(t *testing.T) {
 
 	registry := InitRegistry(cfg)
 
-	for _, name := range []string{"api_key", "jwt", "logging"} {
+	for _, name := range []string{"api_key", "jwt"} {
 		if _, ok := registry[name]; !ok {
 			t.Fatalf("expected middleware %q to exist", name)
 		}
+	}
+
+	if _, ok := registry["logging"]; ok {
+		t.Fatal("logging must not be an opt-in registry middleware; it is applied unconditionally in routeHandler")
 	}
 }
 
