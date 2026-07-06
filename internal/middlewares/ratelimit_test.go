@@ -224,6 +224,41 @@ func TestRateLimit_FailsOpenWhenScriptReturnsUnexpectedShape(t *testing.T) {
 	}
 }
 
+func TestRateLimit_FailsClosedWhenRedisUnavailable(t *testing.T) {
+	rdb := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	cfg := config.RateLimitConfig{Enabled: true, Rate: 1, Capacity: 1, FailClosed: true}
+	handler := RateLimit(rdb, "route-auth", cfg, false)(okHandler())
+
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected fail-closed (503) when Redis is unreachable, got %d", rec.Code)
+	}
+}
+
+func TestRateLimit_FailsClosedWhenScriptReturnsUnexpectedShape(t *testing.T) {
+	rdb := newTestRedis(t)
+	cfg := config.RateLimitConfig{Enabled: true, Rate: 1, Capacity: 1, FailClosed: true}
+	handler := RateLimit(rdb, "route-auth", cfg, false)(okHandler())
+
+	origScript := tokenBucketScript
+	tokenBucketScript = redis.NewScript(`return {1}`)
+	defer func() {
+		tokenBucketScript = origScript
+	}()
+
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.RemoteAddr = "5.5.5.5:1"
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected fail-closed (503) for malformed script result, got %d", rec.Code)
+	}
+}
+
 func TestParseTokenBucketResult(t *testing.T) {
 	cases := []struct {
 		name        string

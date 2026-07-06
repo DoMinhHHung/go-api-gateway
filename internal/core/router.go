@@ -14,7 +14,7 @@ import (
 	"github.com/sony/gobreaker"
 )
 
-func newReverseProxy(target *url.URL, routeID string, breakerCfg config.CircuitBreakerConfig) *httputil.ReverseProxy {
+func newReverseProxy(target *url.URL, routeID string, breakerCfg config.CircuitBreakerConfig, responseHeaderTimeout time.Duration) *httputil.ReverseProxy {
 	proxy := &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			req.URL.Scheme = target.Scheme
@@ -28,7 +28,7 @@ func newReverseProxy(target *url.URL, routeID string, breakerCfg config.CircuitB
 		MaxIdleConnsPerHost:   100,
 		MaxConnsPerHost:       200,
 		IdleConnTimeout:       90 * time.Second,
-		ResponseHeaderTimeout: 5 * time.Second,
+		ResponseHeaderTimeout: responseHeaderTimeout,
 	}
 	proxy.Transport = NewBreakerTransport(baseTransport, routeID, breakerCfg)
 
@@ -72,7 +72,7 @@ func SetupRoutes(cfg *config.AppConfig, rdb *redis.Client) *http.ServeMux {
 		}
 
 		targetURL, _ := url.Parse(route.Backends[0].URL)
-		proxy := newReverseProxy(targetURL, route.ID, route.CircuitBreaker)
+		proxy := newReverseProxy(targetURL, route.ID, route.CircuitBreaker, route.EffectiveResponseHeaderTimeout())
 
 		var handler http.Handler = proxy
 

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/DoMinhHHung/go-api-gateway/internal/config"
 	"github.com/alicebob/miniredis/v2"
@@ -22,7 +23,7 @@ func TestNewReverseProxy_DirectsRequestAndHandlesErrors(t *testing.T) {
 		t.Fatalf("parse target: %v", err)
 	}
 
-	proxy := newReverseProxy(target, "route-1", config.CircuitBreakerConfig{Enabled: false})
+	proxy := newReverseProxy(target, "route-1", config.CircuitBreakerConfig{Enabled: false}, config.DefaultResponseHeaderTimeout)
 	req := httptest.NewRequest(http.MethodGet, "http://original.local/api?q=1", nil)
 	proxy.Director(req)
 
@@ -119,4 +120,39 @@ func TestSetupRoutes_HealthReadyAndMiddlewareProtectedRoute(t *testing.T) {
 	if got := atomic.LoadInt32(&backendHits); got != 1 {
 		t.Fatalf("expected backend to be hit once, got %d", got)
 	}
+}
+
+func TestNewReverseProxy_PerRouteResponseHeaderTimeout(t *testing.T) {
+	slowBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(300 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(slowBackend.Close)
+
+	target, err := url.Parse(slowBackend.URL)
+	if err != nil {
+		t.Fatalf("parse target: %v", err)
+	}
+
+	t.Run("short timeout triggers bad gateway before backend responds", func(t *testing.T) {
+		proxy := newReverseProxy(target, "route-fast-timeout", config.CircuitBreakerConfig{Enabled: false}, 50*time.Millisecond)
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/x", nil)
+		proxy.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadGateway {
+			t.Fatalf("expected 502 due to short response header timeout, got %d", rec.Code)
+		}
+	})
+
+	t.Run("long timeout allows slow backend to complete", func(t *testing.T) {
+		proxy := newReverseProxy(target, "route-slow-timeout", config.CircuitBreakerConfig{Enabled: false}, 2*time.Second)
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/x", nil)
+		proxy.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 when timeout is long enough, got %d", rec.Code)
+		}
+	})
 }

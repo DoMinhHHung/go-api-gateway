@@ -34,9 +34,14 @@ type SecurityConfig struct {
 }
 
 type RateLimitConfig struct {
-	Enabled  bool    `mapstructure:"enabled"`
-	Rate     float64 `mapstructure:"rate"`
-	Capacity int     `mapstructure:"capacity"`
+	Enabled    bool    `mapstructure:"enabled"`
+	Rate       float64 `mapstructure:"rate"`
+	Capacity   int     `mapstructure:"capacity"`
+	FailClosed bool    `mapstructure:"fail_closed"`
+}
+
+type TimeoutConfig struct {
+	ResponseHeader time.Duration `mapstructure:"response_header"`
 }
 
 type RouteConfig struct {
@@ -47,6 +52,16 @@ type RouteConfig struct {
 	Middlewares    []string             `mapstructure:"middlewares"`
 	RateLimit      RateLimitConfig      `mapstructure:"rate_limit"`
 	CircuitBreaker CircuitBreakerConfig `mapstructure:"circuit_breaker"`
+	Timeout        TimeoutConfig        `mapstructure:"timeout"`
+}
+
+const DefaultResponseHeaderTimeout = 5 * time.Second
+
+func (r RouteConfig) EffectiveResponseHeaderTimeout() time.Duration {
+	if r.Timeout.ResponseHeader <= 0 {
+		return DefaultResponseHeaderTimeout
+	}
+	return r.Timeout.ResponseHeader
 }
 
 type BackendConfig struct {

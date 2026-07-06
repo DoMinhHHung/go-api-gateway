@@ -1,6 +1,10 @@
 package config
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,6 +31,27 @@ func copyPublicKey(t *testing.T, content string) string {
 	return path
 }
 
+func generateTestRSAPublicKeyPEM(t *testing.T) string {
+	t.Helper()
+
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate rsa key: %v", err)
+	}
+
+	pubBytes, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
+	if err != nil {
+		t.Fatalf("marshal public key: %v", err)
+	}
+
+	pemBytes := pem.EncodeToMemory(&pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: pubBytes,
+	})
+
+	return copyPublicKey(t, string(pemBytes))
+}
+
 func testConfigYAML() string {
 	return `server:
   port: 1234
@@ -43,14 +68,9 @@ routes:
 }
 
 func TestLoadConfig_Success(t *testing.T) {
-	keyBytes, err := os.ReadFile(filepath.Join("..", "..", "jwt_public.pem"))
-	if err != nil {
-		t.Fatalf("read public key: %v", err)
-	}
-
 	configPath := writeTempConfig(t, testConfigYAML())
 	t.Setenv("API_KEY", "test-api-key")
-	t.Setenv("JWT_PUBLIC_KEY_PATH", copyPublicKey(t, string(keyBytes)))
+	t.Setenv("JWT_PUBLIC_KEY_PATH", generateTestRSAPublicKeyPEM(t))
 	t.Setenv("REDIS_ADDR", "redis.example:6380")
 	t.Setenv("REDIS_PASSWORD", "secret")
 	t.Setenv("REDIS_TLS_ENABLED", "true")
@@ -82,16 +102,11 @@ func TestLoadConfig_Success(t *testing.T) {
 }
 
 func TestLoadConfig_ErrorsWhenAPIKeyMissing(t *testing.T) {
-	keyBytes, err := os.ReadFile(filepath.Join("..", "..", "jwt_public.pem"))
-	if err != nil {
-		t.Fatalf("read public key: %v", err)
-	}
-
 	configPath := writeTempConfig(t, testConfigYAML())
 	t.Setenv("API_KEY", "")
-	t.Setenv("JWT_PUBLIC_KEY_PATH", copyPublicKey(t, string(keyBytes)))
+	t.Setenv("JWT_PUBLIC_KEY_PATH", generateTestRSAPublicKeyPEM(t))
 
-	_, err = LoadConfig(configPath)
+	_, err := LoadConfig(configPath)
 	if err == nil || !strings.Contains(err.Error(), "API_KEY") {
 		t.Fatalf("expected API_KEY error, got %v", err)
 	}

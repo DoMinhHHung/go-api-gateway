@@ -64,14 +64,18 @@ func RateLimit(rdb *redis.Client, routeID string, cfg config.RateLimitConfig, tr
 
 			result, err := tokenBucketScript.Run(context.Background(), rdb, []string{key}, cfg.Rate, cfg.Capacity, now).Result()
 			if err != nil {
-				slog.Warn("rate limit check failed, failing open", "route", routeID, "err", err)
+				if handleRateLimitFailure(w, routeID, cfg.FailClosed, "rate limit check failed", err) {
+					return
+				}
 				next.ServeHTTP(w, r)
 				return
 			}
 
 			allowed, remaining, ok := parseTokenBucketResult(result)
 			if !ok {
-				slog.Error("rate limit script returned unexpected shape, failing open", "route", routeID, "result", result)
+				if handleRateLimitFailure(w, routeID, cfg.FailClosed, "rate limit script returned unexpected shape", result) {
+					return
+				}
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -89,6 +93,19 @@ func RateLimit(rdb *redis.Client, routeID string, cfg config.RateLimitConfig, tr
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func handleRateLimitFailure(w http.ResponseWriter, routeID string, failClosed bool, reason string, details interface{}) bool {
+	if !failClosed {
+		slog.Warn(reason+", failing open", "route", routeID, "detail", details)
+		return false
+	}
+
+	slog.Error(reason+", failing closed (blocking request)", "route", routeID, "detail", details)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	w.Write([]byte(`{"error": "Service Unavailable", "message": "Rate limiter unavailable, request blocked for safety."}`))
+	return true
 }
 
 func parseTokenBucketResult(result interface{}) (allowed bool, remaining int64, ok bool) {

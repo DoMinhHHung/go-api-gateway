@@ -14,12 +14,15 @@ routes:
     rate_limit:
       enabled: true
       rate: 0.2      
-      capacity: 5   
+      capacity: 5
+      fail_closed: true  
     circuit_breaker:
       enabled: true
       max_requests: 1
       interval: 10
       timeout: 15
+    timeout:
+      response_header: 5s
   - id: user_service
     path: /api/v1/users
     methods: ["GET", "POST"]
@@ -30,8 +33,11 @@ routes:
       enabled: true
       rate: 1      
       capacity: 2
+      fail_closed: false  # route thường: Redis lỗi vẫn cho qua, ưu tiên availability
     circuit_breaker:
       enabled: true
       max_requests: 1
       interval: 10
       timeout: 15
+    timeout:
+      response_header: 8s   # user_service có thể có query nặng hơn auth
